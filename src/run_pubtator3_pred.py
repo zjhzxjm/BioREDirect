@@ -150,14 +150,28 @@ def run_inference_dir(in_bioredirect_model,
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
+    # Preserve the legacy BioREx candidate scope while retaining variant types.
+    # Extra pairs use the existing fallback prompt; no model/tokenizer changes.
     considered_ne_pairs = set([
         ('ChemicalEntity', 'ChemicalEntity'),
         ('ChemicalEntity', 'DiseaseOrPhenotypicFeature'),
         ('ChemicalEntity', 'GeneOrGeneProduct'),
+        ('ChemicalEntity', 'OrganismTaxon'),
+        ('ChemicalEntity', 'CellLine'),
         ('ChemicalEntity', 'SequenceVariant'),
         ('DiseaseOrPhenotypicFeature', 'GeneOrGeneProduct'),
+        ('DiseaseOrPhenotypicFeature', 'OrganismTaxon'),
+        ('DiseaseOrPhenotypicFeature', 'CellLine'),
         ('DiseaseOrPhenotypicFeature', 'SequenceVariant'),
         ('GeneOrGeneProduct', 'GeneOrGeneProduct'),
+        ('GeneOrGeneProduct', 'OrganismTaxon'),
+        ('GeneOrGeneProduct', 'CellLine'),
+        ('GeneOrGeneProduct', 'SequenceVariant'),
+        ('OrganismTaxon', 'OrganismTaxon'),
+        ('OrganismTaxon', 'CellLine'),
+        ('OrganismTaxon', 'SequenceVariant'),
+        ('CellLine', 'CellLine'),
+        ('CellLine', 'SequenceVariant'),
         ('SequenceVariant', 'SequenceVariant'),
         ('Chemical', 'Disease')])
     
