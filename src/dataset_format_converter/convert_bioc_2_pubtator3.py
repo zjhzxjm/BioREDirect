@@ -401,9 +401,9 @@ def dump_text_instance_2_xml(
 
 def dump_document_2_xml_with_instance(
             document,
-            rel_pair_list):
+            rel_pair_list,
+            annotation_id_2_ne_dict):
 
-    annotation_id_2_ne_dict={}
     ne_id_2_ne_type_dict={}
     
     out_str = ''
@@ -538,12 +538,15 @@ def dump_documents_2_xml_with_instance(
     out_str += '<date>' + str(datetime.date.today()) + '</date>'
     out_str += '<key>collection.key</key>'
         
+    annotations_by_document = {}
     for document in documents:
         #print(document.id, len(pmid_2_rel_pair_dict), len(pmid_2_rel_pair_dict[document.id]))
         #print(pmid_2_rel_pair_dict.keys())
+        annotations_by_document[document.id] = {}
         out_str += dump_document_2_xml_with_instance(
             document,
-            pmid_2_rel_pair_dict[document.id])
+            pmid_2_rel_pair_dict[document.id],
+            annotations_by_document[document.id])
         
     out_str += '</collection>'
     
@@ -553,11 +556,13 @@ def dump_documents_2_xml_with_instance(
     convert_bioc_to_pubtator3_xml(
         in_orig_xml_file = in_xml_file,
         rel_xml_str      = out_str,
-        out_xml_file     = out_xml_file)
+        out_xml_file     = out_xml_file,
+        annotations_by_document = annotations_by_document)
         
 def convert_bioc_to_pubtator3_xml(in_orig_xml_file,
                                   rel_xml_str,
-                                  out_xml_file):
+                                  out_xml_file,
+                                  annotations_by_document):
     
     orig_tree = None
     rel_tree = None
@@ -604,50 +609,16 @@ def convert_bioc_to_pubtator3_xml(in_orig_xml_file,
         PubTator3Postprocessor.remove_annotator_from_relation(rel_doc_node)
         PubTator3Postprocessor.update_relation_id(rel_doc_node)
         
-        ann_id_to_index_dict = {}
-        for ann_node in rel_doc_node.findall('passage/annotation'):
-            ann_id = ann_node.attrib["id"]
-            loc_node = ann_node.find('location')
-            if ann_node.find('infon[@key="identifier"]'):
-                ne_ids = list(ann_node.find('infon[@key="identifier"]').text.split(';'))
-                ne_ids.sort()
-                ne_ids = ';'.join(ne_ids)
-            else:
-                ne_ids = ''
-            ann_id_to_index_dict[ann_id] = loc_node.attrib["offset"] + '|' + loc_node.attrib["length"] + '|' + ne_ids
-            
-        ann_index_2_orig_ann_id_dict = {}
-        extended_ann_index_2_orig_ann_id_dict = {}
-        ann_index_2_orig_ne_type_dict = {}
-        extended_ann_index_2_orig_ne_type_dict = {}
-        for ann_node in orig_doc_node.findall('passage/annotation'):
-            ann_id = ann_node.attrib["id"]
-            loc_node = ann_node.find('location')                
-            if ann_node.find('infon[@key="identifier"]'):
-                ne_ids = list(ann_node.find('infon[@key="identifier"]').text.split(';'))
-                ne_ids.sort()
-                ne_ids = ';'.join(ne_ids)
-            else:
-                ne_ids = ''
-            ne_type = ann_node.find('infon[@key="type"]').text
-            #ann_id_to_index_dict[ann_id] = loc_node.attrib["offset"] + '|' + loc_node.attrib["length"] + '|' + ne_ids
-            ann_index_2_orig_ann_id_dict[loc_node.attrib["offset"] + '|' + loc_node.attrib["length"] + '|' + ne_ids] = ann_id
-            extended_ann_index_2_orig_ann_id_dict[str(int(loc_node.attrib["offset"]) - 1) + '|' + loc_node.attrib["length"] + '|' + ne_ids] = ann_id
-            ann_index_2_orig_ne_type_dict[loc_node.attrib["offset"] + '|' + loc_node.attrib["length"] + '|' + ne_ids] = ne_type
-            extended_ann_index_2_orig_ne_type_dict[str(int(loc_node.attrib["offset"]) - 1) + '|' + loc_node.attrib["length"] + '|' + ne_ids] = ne_type
-            
-        rel_ann_id_2_orig_ann_id = {}
-        rel_ann_id_2_orig_ne_type = {}
-        for rel_ann_id, ann_index in ann_id_to_index_dict.items():
-            if ann_index in ann_index_2_orig_ann_id_dict:
-                rel_ann_id_2_orig_ann_id[rel_ann_id] = ann_index_2_orig_ann_id_dict[ann_index]
-            elif ann_index in extended_ann_index_2_orig_ann_id_dict:
-                rel_ann_id_2_orig_ann_id[rel_ann_id] = extended_ann_index_2_orig_ann_id_dict[ann_index]
-            
-            if ann_index in ann_index_2_orig_ne_type_dict:
-                rel_ann_id_2_orig_ne_type[rel_ann_id] = ann_index_2_orig_ne_type_dict[ann_index]
-            elif ann_index in extended_ann_index_2_orig_ne_type_dict:
-                rel_ann_id_2_orig_ne_type[rel_ann_id] = extended_ann_index_2_orig_ne_type_dict[ann_index]
+        # The loader keeps each mention's original BioC ID through sentence
+        # splitting. Intermediate offsets describe reassembled text and may shift.
+        original_annotations = {
+            ann.attrib["id"]: ann for ann in orig_doc_node.findall('passage/annotation')
+        }
+        original_by_relation_annotation = {
+            rel_ann_id: original_annotations[ann.bioc_id]
+            for rel_ann_id, ann in annotations_by_document[pmid].items()
+            if ann.bioc_id in original_annotations
+        }
         refid = 0
         
         for rel_node in rel_doc_node.findall('relation'):
@@ -662,22 +633,18 @@ def convert_bioc_to_pubtator3_xml(in_orig_xml_file,
             orig_ne_type1, orig_ne_type2 = '', ''
             for node in rel_node.findall('node'):
                 role1, role2 = node.attrib["role"].split(',')
-                try:
-                    orig_role1, orig_role2 = rel_ann_id_2_orig_ann_id[role1], rel_ann_id_2_orig_ann_id[role2]
-                    orig_ne_type1, orig_ne_type2 = rel_ann_id_2_orig_ne_type[role1], rel_ann_id_2_orig_ne_type[role2]
-                    #print(pmid, role1, role2, orig_role1, orig_role2)
-                    #attrib = {'refid': str(refid), "role":"\"" + orig_role1 + ',' + orig_role2 + "\""}
-                    #new_rel_node.makeelement('node', attrib)
-                    new_node = ET.Element('node')
-                    new_node.set('refid', str(refid))
-                    new_node.set('role', orig_role1 + ',' + orig_role2)
-                    new_rel_node.append(new_node)
-                    refid += 1
-                except:
-                    print(out_xml_file)
-                    print(pmid)
-                    print(role1 in rel_ann_id_2_orig_ann_id, role1)
-                    print(role2 in rel_ann_id_2_orig_ann_id, role2)
+                orig_ann1 = original_by_relation_annotation.get(role1)
+                orig_ann2 = original_by_relation_annotation.get(role2)
+                if orig_ann1 is None or orig_ann2 is None:
+                    print(out_xml_file, pmid, 'unmapped relation annotation', role1, role2)
+                    continue
+                orig_ne_type1 = orig_ann1.find('infon[@key="type"]').text
+                orig_ne_type2 = orig_ann2.find('infon[@key="type"]').text
+                new_node = ET.Element('node')
+                new_node.set('refid', str(refid))
+                new_node.set('role', orig_ann1.attrib["id"] + ',' + orig_ann2.attrib["id"])
+                new_rel_node.append(new_node)
+                refid += 1
             if orig_ne_type1 == '' or orig_ne_type2 == '':
                 continue
             new_rel_node.find('infon[@key="role1"]').text = orig_ne_type1 + '|' + new_rel_node.find('infon[@key="role1"]').text.split('|', 1)[1]
