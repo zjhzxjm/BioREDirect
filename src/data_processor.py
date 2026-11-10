@@ -305,6 +305,7 @@ class BioREDDataset(Dataset):
             elif token == '[NOV]':
                 novelty_token_index = i
             elif token == '[SEP]':
+                instruction_end = i
                 break
             content["instruction_tokens"].append(token)
         num_instruction_tokens = len(content["instruction_tokens"])
