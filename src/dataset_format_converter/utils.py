@@ -5,6 +5,7 @@ Created on Thu Jul 15 14:09:51 2021
 @author: laip2
 """
 import re
+import unicodedata
 from document import TextInstance
 import json
 import logging
@@ -93,13 +94,19 @@ def split_sentence(document, nlp = None):
     
     document.text_instances = new_text_instances
 
+def _length_without_bert_whitespace(text):
+    # Match BasicTokenizer's whitespace categories without changing source offsets.
+    return sum(char not in ' \t\n\r' and unicodedata.category(char) != 'Zs'
+               for char in text)
+
+
 def tokenize_document_by_bert(document, tokenizer):
     for text_instance in document.text_instances:
          
         text_instance.tokens = tokenizer.tokenize(text_instance.text)
         for entity in text_instance.annotations:
-            start_wo_space = len(text_instance.text[:entity.position].replace(' ', ''))
-            end_wo_space = start_wo_space + len(entity.text.replace(' ', ''))
+            start_wo_space = _length_without_bert_whitespace(text_instance.text[:entity.position])
+            end_wo_space = start_wo_space + _length_without_bert_whitespace(entity.text)
             entity.start_token = -1
             entity.end_token = -1
             previous_wo_space = 0
